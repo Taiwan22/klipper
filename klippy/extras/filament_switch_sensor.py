@@ -4,6 +4,9 @@
 #
 # This file may be distributed under the terms of the GNU GPLv3 license.
 import logging
+import chelper #wzy add
+import mcu  #wzy add
+from . import homing #wzy add
 
 class RunoutHelper:
     def __init__(self, config):
@@ -11,6 +14,15 @@ class RunoutHelper:
         self.printer = config.get_printer()
         self.reactor = self.printer.get_reactor()
         self.gcode = self.printer.lookup_object('gcode')
+        if self.name == "power_loss":
+            self.mcu = self.printer.lookup_object('mcu') #wzy add
+            ffi_main, ffi_lib = chelper.get_ffi() #wzy add
+            self._trdispatch = ffi_main.gc(ffi_lib.trdispatch_alloc(), ffi_lib.free) #wzy add
+            self._trsyncs = [] #wzy add
+            self.gcode.register_command(    #wzy add
+            'STEPPER_STOP',self.cmd_STEPPER_STOP,
+            desc=self.cmd_STEPPER_STOP_help)
+
         # Read config
         self.runout_pause = config.getboolean('pause_on_runout', True)
         if self.runout_pause:
@@ -31,6 +43,8 @@ class RunoutHelper:
         self.sensor_enabled = True
         # Register commands and event handlers
         self.printer.register_event_handler("klippy:ready", self._handle_ready)
+        self.printer.register_event_handler('klippy:mcu_identify',
+                                            self._handle_mcu_identify) #wzy add
         self.gcode.register_mux_command(
             "QUERY_FILAMENT_SENSOR", "SENSOR", self.name,
             self.cmd_QUERY_FILAMENT_SENSOR,
@@ -41,6 +55,14 @@ class RunoutHelper:
             desc=self.cmd_SET_FILAMENT_SENSOR_help)
     def _handle_ready(self):
         self.min_event_systime = self.reactor.monotonic() + 2.
+    def _handle_mcu_identify(self): #wzy add
+        if self.name == "power_loss":
+            kin = self.printer.lookup_object('toolhead').get_kinematics() #wzy add
+            for stepper in kin.get_steppers(): #wzy add
+                self.add_stepper(stepper) #wzy add
+            extruder = self.printer.lookup_object('toolhead').get_extruder()
+            stepper_ext = extruder.extruder_stepper.stepper
+            self.add_stepper(stepper_ext)         
     def _runout_event_handler(self, eventtime):
         # Pausing from inside an event requires that the pause portion
         # of pause_resume execute immediately.
@@ -102,6 +124,53 @@ class RunoutHelper:
     cmd_SET_FILAMENT_SENSOR_help = "Sets the filament sensor on/off"
     def cmd_SET_FILAMENT_SENSOR(self, gcmd):
         self.sensor_enabled = gcmd.get_int("ENABLE", 1)
+    def add_stepper(self, stepper): #wzy add
+        trsyncs = {trsync.get_mcu(): trsync for trsync in self._trsyncs}
+        trsync = trsyncs.get(stepper.get_mcu())
+        if trsync is None:
+            trsync = mcu.MCU_trsync(stepper.get_mcu(),self._trdispatch)
+            self._trsyncs.append(trsync)
+            logging.info("add_stepper,oid:%s" % (trsync._oid))
+        trsync.add_stepper(stepper)
+        # Check for unsupported multi-mcu shared stepper rails
+        sname = stepper.get_name()
+        if sname.startswith('stepper_'):
+            for ot in self._trsyncs:
+                for s in ot.get_steppers():
+                    if ot is not trsync and s.get_name().startswith(sname[:9]):
+                        cerror = self._mcu.get_printer().config_error
+                        raise cerror("Multi-mcu homing not supported on"
+                                     " multi-mcu shared axis")
+    cmd_STEPPER_STOP_help = "Stop the stepper by send commands to the mcu" #wzy add
+    def cmd_STEPPER_STOP(self,gcmd): #wzy add
+        toolhead = self.printer.lookup_object('toolhead')
+        toolhead.move_queue.reset()
+        fan_state = self.printer.lookup_object('fan')
+        fan_state.fan.set_speed_from_command(0.)
+        heater_state = self.printer.lookup_object('heaters')
+        heater_state.turn_off_all_heaters()     
+        print_time = toolhead.get_last_move_time() 
+        expire_timeout = 0.025
+        for trsync in self._trsyncs:
+            trsync.start(print_time, None, expire_timeout)
+        etrsync = self._trsyncs[0]
+        ffi_main, ffi_lib = chelper.get_ffi()
+        ffi_lib.trdispatch_start(self._trdispatch, etrsync.REASON_HOST_REQUEST)
+        ffi_main, ffi_lib = chelper.get_ffi()
+        ffi_lib.trdispatch_stop(self._trdispatch)
+        for trsync in self._trsyncs:
+            trsync.stop()      
+        homing_state = homing.Homing(self.printer)
+        kin = toolhead.get_kinematics()
+        kin.rails[0].homing_speed = 300
+        try:
+            kin.home(homing_state)
+        except self.printer.command_error:
+            if self.printer.is_shutdown():
+                raise self.printer.command_error(
+                    "Homing failed due to printer shutdown")
+            self.printer.lookup_object('stepper_enable').motor_off()
+            raise
 
 class SwitchSensor:
     def __init__(self, config):

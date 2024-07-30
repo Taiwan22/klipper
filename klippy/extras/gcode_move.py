@@ -4,10 +4,16 @@
 #
 # This file may be distributed under the terms of the GNU GPLv3 license.
 import logging
+import subprocess #flsun add, for AI detect,Add a child thread
 
 class GCodeMove:
     def __init__(self, config):
         self.printer = printer = config.get_printer()
+        #flsun add , add x_size_offset and y_size_offset to modify size precision
+        p_config = config.getsection('printer')
+        self.x_size_offset = p_config.getfloat('x_size_offset', 0, above=-0.035, below=0.035) 
+        self.y_size_offset = p_config.getfloat('y_size_offset', 0, above=-0.035, below=0.035) 
+        
         printer.register_event_handler("klippy:ready", self._handle_ready)
         printer.register_event_handler("klippy:shutdown", self._handle_shutdown)
         printer.register_event_handler("toolhead:set_position",
@@ -45,6 +51,13 @@ class GCodeMove:
         self.speed = 25.
         self.speed_factor = 1. / 60.
         self.extrude_factor = 1.
+        self.e_pos = 0 #flsun add, Record extruder coordinates
+        self.z_pos = 0 #flsun add, Record z coordinates
+        self.first_layer_detect = False #flsun add ,decide if it is first layer
+        self.z_raise = False #flsun add
+        self.reactor = self.printer.get_reactor() #flsun add
+        self.last_AI_z = 0 #flsun add,
+        self.max_z = 430 #flsun add
         # G-Code state
         self.saved_states = {}
         self.move_transform = self.move_with_transform = None
@@ -73,6 +86,7 @@ class GCodeMove:
         self.base_position[3] = self.last_position[3]
     def _handle_home_rails_end(self, homing_state, rails):
         self.reset_last_position()
+        self.max_z = self.last_position[2] #flsun add
         for axis in homing_state.get_axes():
             self.base_position[axis] = self.homing_position[axis]
     def set_move_transform(self, transform, force=False):
@@ -110,6 +124,13 @@ class GCodeMove:
         if self.is_printer_ready:
             self.last_position = self.position_with_transform()
     # G-Code movement commands
+    def get_xy_size_offset(self):
+        return self.x_size_offset, self.y_size_offset
+    def set_first_layer_detect(self): #flsun add
+        self.first_layer_detect = True
+        self.z_pos = 9999.99
+        self.z_raise = False
+        self.last_AI_z = 0
     def cmd_G1(self, gcmd):
         # Move
         params = gcmd.get_command_parameters()
@@ -131,6 +152,40 @@ class GCodeMove:
                 else:
                     # value relative to base coordinate position
                     self.last_position[3] = v + self.base_position[3]
+                if self.last_position[2] > (self.z_pos+0.02) and self.last_position[2] >= 0.4 and self.last_position[2] <= 1.0:
+                    self.z_raise = True
+                self.z_pos = self.last_position[2]
+                if self.z_raise and self.first_layer_detect: #flsun add, z raise and 'E' in param ,first layer detect
+                    eventtime = self.reactor.monotonic()
+                    idle_timeout = self.printer.lookup_object("idle_timeout")
+                    is_printing = idle_timeout.get_status(eventtime)["state"] == "Printing"
+                    if is_printing:
+                        gcode = self.printer.lookup_object('gcode')
+                        gcode.run_script_from_command("RESTORE_E_CURRENT")
+                        self.first_layer_detect = False
+                        subprocess.Popen(["bash", "/home/pi/flsun_func/Structured_light/move_model.sh"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE) #flsun add
+            if self.last_position[3] < 10.0: #flsun add,set self.e_pos = 0 when a print start
+                self.e_pos = self.last_position[3]
+            if self.last_position[3] - self.e_pos > 70 and self.last_position[3] > 100 and self.last_position[2] - self.last_AI_z >= 0.10: #flsun add ,Perform AI detection when these conditions are met   
+                eventtime = self.reactor.monotonic()
+                idle_timeout = self.printer.lookup_object("idle_timeout")
+                is_printing = idle_timeout.get_status(eventtime)["state"] == "Printing"
+                if is_printing:
+                    self.e_pos = self.last_position[3]
+                    self.last_AI_z = self.last_position[2]
+                    subprocess.Popen(["bash", "/home/pi/flsun_func/AI_detect/printing_run.sh"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE) #flsun add                    
+            #flsun add, modify x and y direction,
+            self.cali_position = self.last_position[:] #flsun add
+            real_x_size_offset = real_y_size_offset = 0
+            if self.last_position[2] > (self.max_z - 2.5):
+                real_x_size_offset = 0
+                real_y_size_offset = 0
+            else:
+                real_x_size_offset = self.x_size_offset
+                real_y_size_offset = self.y_size_offset
+            self.cali_position[0] = self.last_position[0] * (1 + real_x_size_offset) 
+            self.cali_position[1] = self.last_position[1] * (1 + real_y_size_offset) 
+            
             if 'F' in params:
                 gcode_speed = float(params['F'])
                 if gcode_speed <= 0.:
@@ -140,7 +195,7 @@ class GCodeMove:
         except ValueError as e:
             raise gcmd.error("Unable to parse move '%s'"
                              % (gcmd.get_commandline(),))
-        self.move_with_transform(self.last_position, self.speed)
+        self.move_with_transform(self.cali_position, self.speed) #flsun modfiy
     # G-Code coordinate manipulation
     def cmd_G20(self, gcmd):
         # Set units to inches
@@ -174,6 +229,14 @@ class GCodeMove:
         # Get Current Position
         p = self._get_gcode_position()
         gcmd.respond_raw("X:%.3f Y:%.3f Z:%.3f E:%.3f" % tuple(p))
+        f = gcmd.get_float('F', None, above=-1.)
+        size_copy = gcmd.get_float('S', None, above=-1.)
+        if f == 1.0:
+            self.first_layer_detect = True
+        elif f == 0.0:
+            self.first_layer_detect = False
+        if size_copy == 1.0:
+            subprocess.Popen(["bash", "/home/pi/flsun_func/change_printer_cfg_size_offset.sh"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE) #flsun add
     def cmd_M220(self, gcmd):
         # Set speed factor override percentage
         value = gcmd.get_float('S', 100., above=0.) / (60. * 100.)

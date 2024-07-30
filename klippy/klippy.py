@@ -7,7 +7,7 @@
 import sys, os, gc, optparse, logging, time, collections, importlib
 import util, reactor, queuelogger, msgproto
 import gcode, configfile, pins, mcu, toolhead, webhooks
-
+import extras.flsun_warning as warning_info #flsun add, add warning dict
 message_ready = "Printer is ready"
 
 message_startup = """
@@ -150,6 +150,8 @@ class Printer:
             self._set_state(msg)
             self.send_event("klippy:notify_mcu_error", msg, {"error": str(e)})
             util.dump_mcu_build()
+            gcode =  self.lookup_object('gcode') #flsun add
+            gcode.request_restart('firmware_restart') #flsun add         
             return
         except Exception as e:
             logging.exception("Unhandled exception during connect")
@@ -203,9 +205,17 @@ class Printer:
     def invoke_shutdown(self, msg, details={}):
         if self.in_shutdown_state:
             return
+        #flsun add,don't shutdown while ADC out of range (min_temp,max_temp)
+        #if "ADC out of range" in msg:
+        #    return      WE WILL SHUTDOWN!!!
+        #flsun add, save time 
+        timetamp = time.time()
+        time_tuple = time.localtime(timetamp)
+        time_str = time.strftime("%Y-%m-%d %H:%M:%S", time_tuple)
+
         logging.error("Transition to shutdown state: %s", msg)
         self.in_shutdown_state = True
-        self._set_state(msg)
+        self._set_state("%s%s" % (msg, message_shutdown))
         for cb in self.event_handlers.get("klippy:shutdown", []):
             try:
                 cb()
@@ -214,6 +224,20 @@ class Printer:
         logging.info("Reactor garbage collection: %s",
                      self.reactor.get_gc_stats())
         self.send_event("klippy:notify_mcu_shutdown", msg, details)
+        #flsun add, firmware_restart after shutdwon ,and save waning in mylog.txt
+        gcode =  self.lookup_object('gcode')
+        gcode.request_restart('firmware_restart')
+        my_dict = warning_info.warning_dict
+        my_key = ""
+        for key, value in my_dict.items():
+    	        if value in msg:  
+                    my_key = key
+                    break 
+        with open("/home/pi/klipper_logs/mylog.txt", 'a') as file_ob:
+            file_ob.write("Time: " + time_str + "  Code:" + my_key + "  Info: " + msg + "  Operate: " + "Reboot" + "   \n")
+        gcode.run_script('M117 error_info:%s  %s' % (my_key,msg))
+    def my_shutdown(self, msg): #flsun add,shutdown ,and set my_shutdown_state to True
+        self.invoke_shutdown("power loss")
     def invoke_async_shutdown(self, msg, details):
         self.reactor.register_async_callback(
             (lambda e: self.invoke_shutdown(msg, details)))

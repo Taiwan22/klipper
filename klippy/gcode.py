@@ -4,6 +4,8 @@
 #
 # This file may be distributed under the terms of the GNU GPLv3 license.
 import os, re, logging, collections, shlex
+import time #flsun add, show time in mylog.txt
+import extras.flsun_warning as warning_info #flsun add, add warning dict
 
 class CommandError(Exception):
     pass
@@ -248,6 +250,19 @@ class GCodeDispatch:
         self.respond_raw('!! %s' % (lines[0].strip(),))
         if self.is_fileinput:
             self.printer.request_exit('error_exit')
+        #flsun add?wirte warning info to mylog.txt,eg:move out of range,probe fail,home fail... 
+        timetamp = time.time()
+        time_tuple = time.localtime(timetamp)
+        time_str = time.strftime("%Y-%m-%d %H:%M:%S", time_tuple)
+        my_dict = warning_info.warning_dict
+        my_key = ""
+        for key, value in my_dict.items():
+    	        if value in msg:  
+                    my_key = key
+                    break 
+        with open("/home/pi/klipper_logs/mylog.txt", 'a') as file_ob:
+            file_ob.write("Time: " + time_str + "  Code:" + my_key + "  Info: " + msg + "  Operate: " + "None" + "   \n")
+
     def _respond_state(self, state):
         self.respond_info("Klipper state: %s" % (state,), log=False)
     # Parameter parsing helpers

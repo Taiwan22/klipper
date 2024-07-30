@@ -4,8 +4,9 @@
 #
 # This file may be distributed under the terms of the GNU GPLv3 license.
 import os, logging, threading
+import time #flsun add，for show time
 
-
+heat_break = 0 #flsun add, a flag to decide whether to interrupt heating
 ######################################################################
 # Heater
 ######################################################################
@@ -44,6 +45,9 @@ class Heater:
         # pwm caching
         self.next_pwm_time = 0.
         self.last_pwm_value = 0.
+        self.min_temp_warning = True #flsun add, execute only once
+        self.max_temp_warning = True #flsun add, execute only once
+
         # Setup control algorithm sub-class
         algos = {'watermark': ControlBangBang, 'pid': ControlPID}
         algo = config.getchoice('control', algos)
@@ -134,6 +138,28 @@ class Heater:
             last_temp = self.last_temp
             last_pwm_value = self.last_pwm_value
         is_active = target_temp or last_temp > 50.
+        #flsun add, min temp don't shutdown ,max temp shutdown ,and save warning info to mylog.txt
+        if last_temp > self.min_temp and last_temp < self.max_temp:
+            self.min_temp_warning = True
+            self.max_temp_warning = True
+        if last_temp < self.min_temp and self.min_temp_warning:
+            timetamp = time.time()
+            time_tuple = time.localtime(timetamp)
+            time_str = time.strftime("%Y-%m-%d %H:%M:%S", time_tuple)
+            if "extruder" in self.short_name:
+                my_key = "00-00-000"
+            if "_bed" in self.short_name:
+                my_key = "00-01-000"
+            with open("/home/pi/klipper_logs/mylog.txt", 'a') as file_ob:
+                file_ob.write("Time: " + time_str + "  Code:" + my_key + "  Info: " + self.name + "   min temp warning" + "  Operate: " + "None" + "   \n")
+            gcode = self.printer.lookup_object("gcode")
+            msg = self.short_name + "   min temp warning"
+            gcode.run_script('M117 error_info:%s  %s' % (my_key,msg))
+            self.min_temp_warning = False
+        if last_temp > self.max_temp and self.max_temp_warning:
+            self.printer.invoke_shutdown(self.short_name + "  MAX TEMP")
+            self.max_temp_warning = False
+
         return is_active, '%s: target=%.0f temp=%.1f pwm=%.3f' % (
             self.short_name, target_temp, last_temp, last_pwm_value)
     def get_status(self, eventtime):
@@ -146,8 +172,17 @@ class Heater:
     cmd_SET_HEATER_TEMPERATURE_help = "Sets a heater temperature"
     def cmd_SET_HEATER_TEMPERATURE(self, gcmd):
         temp = gcmd.get_float('TARGET', 0.)
+        wait = gcmd.get_float('WAIT', 0) #flsun add,add a 'wait' to let heat hotbed1 wait
+        if ("extruder" in self.short_name):
+            gcode = self.printer.lookup_object('gcode') # flsun add，load gcode
+            if(temp > 0.5):
+                gcode.run_script_from_command("relay_on") #flsun add
         pheaters = self.printer.lookup_object('heaters')
-        pheaters.set_temperature(self, temp)
+        if (wait==1):
+            pheaters.set_temperature(self, temp, True) #flsun add,if WAIT=1 ,the heat process will wait
+        else:
+            pheaters.set_temperature(self, temp, False) #flsun add,if not,the heat process won't wait
+
 
 
 ######################################################################
@@ -177,7 +212,7 @@ class ControlBangBang:
 # Proportional Integral Derivative (PID) control algo
 ######################################################################
 
-PID_SETTLE_DELTA = 1.
+PID_SETTLE_DELTA = 3. #flsun modify ,change it from 1 to 3
 PID_SETTLE_SLOPE = .1
 
 class ControlPID:
@@ -222,8 +257,8 @@ class ControlPID:
             self.prev_temp_integ = temp_integ
     def check_busy(self, eventtime, smoothed_temp, target_temp):
         temp_diff = target_temp - smoothed_temp
-        return (abs(temp_diff) > PID_SETTLE_DELTA
-                or abs(self.prev_temp_deriv) > PID_SETTLE_SLOPE)
+        return (abs(temp_diff) > PID_SETTLE_DELTA) #flsun modify ,add a ) and delete next line ,so heat will finish when temp is around target +-1 
+                #or abs(self.prev_temp_deriv) > PID_SETTLE_SLOPE)
 
 
 ######################################################################
@@ -289,6 +324,8 @@ class PrinterHeaters:
         if sensor_type not in self.sensor_factories:
             raise self.printer.config_error(
                 "Unknown temperature sensor '%s'" % (sensor_type,))
+        if sensor_type == 'NTC 100K beta 3950':
+            config.deprecate('sensor_type', 'NTC 100K beta 3950')
         return self.sensor_factories[sensor_type](config)
     def register_sensor(self, config, psensor, gcode_id=None):
         self.available_sensors.append(config.get_name())
@@ -332,6 +369,10 @@ class PrinterHeaters:
         did_ack = gcmd.ack(msg)
         if not did_ack:
             gcmd.respond_raw(msg)
+        heat_break_flag = gcmd.get_float('S', None, above=0.)
+        if heat_break_flag is not None:
+            global heat_break
+            heat_break = 0
     def _wait_for_temperature(self, heater):
         # Helper to wait on heater.check_busy() and report M105 temperatures
         if self.printer.get_start_args().get('debugoutput') is not None:
@@ -340,7 +381,8 @@ class PrinterHeaters:
         gcode = self.printer.lookup_object("gcode")
         reactor = self.printer.get_reactor()
         eventtime = reactor.monotonic()
-        while not self.printer.is_shutdown() and heater.check_busy(eventtime):
+        #flsun modify, add  "and (not heat_break)" to check heat_break is 0 or 1
+        while not self.printer.is_shutdown() and heater.check_busy(eventtime) and (not heat_break):
             print_time = toolhead.get_last_move_time()
             gcode.respond_raw(self._get_temp(eventtime))
             eventtime = reactor.pause(eventtime + 1.)

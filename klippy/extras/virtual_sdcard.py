@@ -4,6 +4,10 @@
 #
 # This file may be distributed under the terms of the GNU GPLv3 license.
 import os, sys, logging, io
+import subprocess #flsun add
+import sys #flsun add
+import importlib #flsun add
+importlib.reload(sys) #flsun add
 
 VALID_GCODE_EXTS = ['gcode', 'g', 'gco']
 
@@ -46,6 +50,8 @@ class VirtualSD:
         self.gcode.register_command(
             "SDCARD_PRINT_FILE", self.cmd_SDCARD_PRINT_FILE,
             desc=self.cmd_SDCARD_PRINT_FILE_help)
+        self.gcode.register_command("POWER_LOSS_RESTART_PRINT", self.cmd_POWER_LOSS_RESTART_PRINT, #wzy add
+            desc=self.cmd_POWER_LOSS_RESTART_PRINT_help)
     def handle_shutdown(self):
         if self.work_timer is not None:
             self.must_pause_work = True
@@ -174,7 +180,16 @@ class VirtualSD:
         if filename.startswith('/'):
             filename = filename[1:]
         self._load_file(gcmd, filename)
-    def _load_file(self, gcmd, filename, check_subdirs=False):
+    cmd_POWER_LOSS_RESTART_PRINT_help = "Restart print after power loss and power on" #wzy add
+    def cmd_POWER_LOSS_RESTART_PRINT(self, gcmd): #wzy add
+        filename = gcmd.get("FILENAME")
+        fileposition = gcmd.get("FILEPOSITION")
+        fname = os.path.basename(filename)
+        print_duration = gcmd.get("PRINT_DURATION")
+        self.print_stats.modify_print_time(float(print_duration))
+        self._load_file(gcmd, fname, fileposition, check_subdirs=True)      
+        self.do_resume()
+    def _load_file(self, gcmd, filename, fileposition=0, check_subdirs=False):
         files = self.get_file_list(check_subdirs)
         flist = [f[0] for f in files]
         files_by_lower = { fname.lower(): fname for fname, fsize in files }
@@ -192,10 +207,116 @@ class VirtualSD:
             raise gcmd.error("Unable to open file")
         gcmd.respond_raw("File opened:%s Size:%d" % (filename, fsize))
         gcmd.respond_raw("File selected")
+        with open("/home/pi/printer_data/gcodes/" + str(filename)) as file_ob:
+            #layer_text = ";LAYER_CHANGE"
+            wall_text = ";TYPE:External perimeter" #prusa slicer wall out start position
+            wall_cura_text = ";TYPE:WALL-OUTER"    #cura wall out start position
+            wall_end_text = ";TYPE:" # wall out end position
+            wall_detect = False
+            x_coor = 0.0
+            y_coor = 0.0
+            dis1 = 0.0
+            dis2 = 0.0
+            dis3 = 0.0
+            dis4 = 0.0
+            point1_x = 0.0
+            point1_y = 0.0
+            point2_x = 0.0
+            point2_y = 0.0
+            point3_x = 0.0
+            point3_y = 0.0
+            point4_x = 0.0
+            point4_y = 0.0
+            count = 0
+            for line in file_ob:
+                word = line.rstrip()
+                count += 1
+                if wall_text in word  or wall_cura_text in word:
+                    wall_detect = True
+                    print(count)
+                    continue
+                if wall_detect and wall_end_text in word:
+                    wall_detect = False
+                    print(count)
+                    break
+                if  wall_detect and "G1" in word and ("X" in word or "Y" in word):
+                    if "X" in word:
+                        x_coor = self.parse_string('X', word)
+                    if "Y" in word:
+                        y_coor = self.parse_string('Y', word)
+                    if x_coor < 0 and y_coor < 0: #lower left point
+                        if (dis1 < x_coor*x_coor + y_coor*y_coor):
+                            dis1 = x_coor*x_coor + y_coor*y_coor
+                            point1_x = x_coor
+                            point1_y = y_coor
+                    elif x_coor > 0 and y_coor < 0: #Lower right point
+                        if (dis2 < x_coor*x_coor + y_coor*y_coor):
+                            dis2 = x_coor*x_coor + y_coor*y_coor
+                            point2_x = x_coor
+                            point2_y = y_coor
+                    elif x_coor > 0 and y_coor > 0: #upper right point
+                        if (dis3 < x_coor*x_coor + y_coor*y_coor):
+                            dis3 = x_coor*x_coor + y_coor*y_coor
+                            point3_x = x_coor
+                            point3_y = y_coor
+                    elif x_coor < 0 and y_coor > 0: #upper left point
+                        if (dis4 < x_coor*x_coor + y_coor*y_coor):
+                            dis4 = x_coor*x_coor + y_coor*y_coor
+                            point4_x = x_coor
+                            point4_y = y_coor
+            with open("/home/pi/flsun_func/Structured_light/move_model.sh", 'r+') as temp:
+                content = temp.readlines()
+            point1_y -= 25.8
+            point2_y -= 25.8
+            point3_y -= 25.8
+            point4_y -= 25.8
+            while (point1_x*point1_x + point1_y*point1_y > 160*160):
+                point1_y += 3
+                if point1_y > -6 and point1_y < 6:
+                    break
+            while (point2_x*point2_x + point2_y*point2_y > 160*160):
+                point2_y += 3
+                if point2_y > -6 and point2_y < 6:
+                    break
+            while (point3_x*point3_x + point3_y*point3_y > 160*160):
+                point3_y -= 3
+                if point3_y > -6 and point3_y < 6:
+                    break
+            while (point4_x*point4_x + point4_y*point4_y > 160*160):
+                point4_y -= 3
+                if point4_y > -6 and point4_y < 6:
+                    break
+            content[0] = "X1=%f Y1=%f X2=%f Y2=%f X3=%f Y3=%f X4=%f Y4=%f X5=%f Y5=%f X6=%f Y6=%f X7=%f Y7=%f X8=%f Y8=%f\n" % (point1_x + 1.5, point1_y, point1_x + 3, point1_y, point2_x - 1.5, point2_y, point2_x - 3, point2_y, point3_x -1.5, point3_y, point3_x - 3, point3_y, point4_x + 1.5, point4_y, point4_x + 3, point4_y)
+            with open("/home/pi/flsun_func/Structured_light/move_model.sh", 'w+') as temp:
+                temp.writelines(content)
+                          
+        subprocess.Popen(["rm", "/home/pi/flsun_func/AI_detect/print_log.txt"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE) #flsun add
+        subprocess.Popen(["rm", "/home/pi/flsun_func/AI_detect/before_print_log.txt"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE) #flsun add
+        #subprocess.Popen(["rm", "/home/pi/flsun_func/time_lapse/png/"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE) #flsun add       
         self.current_file = f
-        self.file_position = 0
+        self.file_position = int(fileposition) #wzy modify
         self.file_size = fsize
         self.print_stats.set_current_file(filename)
+        #flsun add, run START_PRINT when start a print
+        if(fileposition == 0): #wzy modify
+            self.gcode.run_script_from_command("G28")
+        if str(filename).strip() != ".test/line.gcode" and str(filename).strip() != ".test/cube.gcode":
+            subprocess.Popen(["bash", "/home/pi/flsun_func/AI_detect/before_printing_run.sh"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE) #flsun add
+        if(fileposition == 0): #wzy modify
+            self.gcode.run_script_from_command("START_PRINT")
+        else: #wzy modify
+            self.gcode.run_script_from_command("START_PRINT_RESUME")
+
+    def parse_string(self, ch, word): #flsun add
+        start = word.index(ch) + 1 # get first ch position
+        if ' ' in word[start:]:
+            end = word.index(' ', start, -1)
+            num_str = word[start:end]
+        else:
+            end = -1
+            num_str = word[start:]
+        num = float(num_str)
+        return num
     def cmd_M24(self, gcmd):
         # Start/resume SD print
         self.do_resume()
@@ -302,6 +423,9 @@ class VirtualSD:
             self.print_stats.note_pause()
         else:
             self.print_stats.note_complete()
+            #flsun add, run END_PRINT when end a print
+            self.gcode.run_script_from_command("END_PRINT")
+
         return self.reactor.NEVER
 
 def load_config(config):

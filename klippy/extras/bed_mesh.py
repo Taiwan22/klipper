@@ -3,6 +3,7 @@
 # Copyright (C) 2018-2019 Eric Callahan <arksine.code@gmail.com>
 #
 # This file may be distributed under the terms of the GNU GPLv3 license.
+#Maybe need to look at FLSUN changes
 import logging, math, json, collections
 from . import probe
 

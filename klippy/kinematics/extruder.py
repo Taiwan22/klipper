@@ -255,6 +255,9 @@ class PrinterExtruder:
     def cmd_M104(self, gcmd, wait=False):
         # Set Extruder Temperature
         temp = gcmd.get_float('S', 0.)
+        gcode = self.printer.lookup_object('gcode') # flsun add?load gcode
+        if(temp > 0.5):
+            gcode.run_script_from_command("relay_on") #flsun add
         index = gcmd.get_int('T', None, minval=0)
         if index is not None:
             section = 'extruder'

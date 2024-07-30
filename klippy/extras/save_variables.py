@@ -47,7 +47,7 @@ class SaveVariables:
         varfile = configparser.ConfigParser()
         varfile.add_section('Variables')
         for name, val in sorted(newvars.items()):
-            varfile.set('Variables', name, repr(val))
+            varfile.set('Variables', name, repr(val).replace('%', "%%")) #flsun modify
         try:
             f = open(self.filename, "w")
             varfile.write(f)
@@ -56,6 +56,7 @@ class SaveVariables:
             msg = "Unable to save variable"
             logging.exception(msg)
             raise gcmd.error(msg)
+        gcmd.respond_info("Variable Saved") #flsun add
         self.loadVariables()
     def get_status(self, eventtime):
         return {'variables': self.allVariables}
