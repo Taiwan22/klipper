@@ -79,6 +79,7 @@ class PrinterStepperEnable:
                                             self._handle_request_restart)
         # Register M18/M84 commands
         gcode = self.printer.lookup_object('gcode')
+        gcode.register_command("M17", self.cmd_M17) #flsun add
         gcode.register_command("M18", self.cmd_M18)
         gcode.register_command("M84", self.cmd_M18)
         gcode.register_command("SET_STEPPER_ENABLE",
@@ -95,6 +96,16 @@ class PrinterStepperEnable:
         for el in self.enable_lines.values():
             el.motor_disable(print_time)
         self.printer.send_event("stepper_enable:motor_off", print_time)
+        toolhead.dwell(DISABLE_STALL_TIME)
+    def motor_on(self): #flsun add
+        toolhead = self.printer.lookup_object('toolhead')
+        toolhead.dwell(DISABLE_STALL_TIME)
+        print_time = toolhead.get_last_move_time()
+        enable_xyz_lines = self.enable_lines.copy()
+        del enable_xyz_lines['extruder']
+        for el in enable_xyz_lines.values():
+            el.motor_enable(print_time)
+        self.printer.send_event("stepper_enable:motor_on", print_time)
         toolhead.dwell(DISABLE_STALL_TIME)
     def motor_debug_enable(self, stepper, enable):
         toolhead = self.printer.lookup_object('toolhead')
@@ -114,6 +125,9 @@ class PrinterStepperEnable:
         return {'steppers': steppers}
     def _handle_request_restart(self, print_time):
         self.motor_off()
+    def cmd_M17(self, gcmd): #flsun add
+        # Turn on motors
+        self.motor_on()
     def cmd_M18(self, gcmd):
         # Turn off motors
         self.motor_off()

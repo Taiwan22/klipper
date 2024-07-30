@@ -277,11 +277,15 @@ class ToolHead:
             raise config.error(msg)
         # Register commands
         gcode.register_command('G4', self.cmd_G4)
+        gcode.register_command('M108', self.cmd_M108) #flsun add,excute while power loss
+        gcode.register_command('M100', self.cmd_M100) #flsun add,excute shell command
+        gcode.register_command('M101', self.cmd_M101) #flsun add,excute flow,size,warp
         gcode.register_command('M400', self.cmd_M400)
         gcode.register_command('SET_VELOCITY_LIMIT',
                                self.cmd_SET_VELOCITY_LIMIT,
                                desc=self.cmd_SET_VELOCITY_LIMIT_help)
         gcode.register_command('M204', self.cmd_M204)
+        #gcode.register_command('M205', self.cmd_M205)#flsun add ,add M205 X to modify jerk - use macro in printer.cfg
         self.printer.register_event_handler("klippy:shutdown",
                                             self._handle_shutdown)
         # Load some default modules
@@ -289,6 +293,63 @@ class ToolHead:
                    "manual_probe", "tuning_tower"]
         for module_name in modules:
             self.printer.load_object(config, module_name)
+    def cmd_M108(self, gcmd): #flsun add, shutdown
+        self.printer.my_shutdown("my shutdwon")
+    def cmd_M100(self, gcmd): #flsun add, shell command
+        sh = gcmd.get_float('S', None, above=0.)
+        if sh == 1.0:
+            subprocess.Popen(["bash", "/home/pi/flsun_func/Structured_light/move_cali.sh"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE) #flsun add
+        elif sh == 2.0:
+            subprocess.Popen(["bash", "/home/pi/flsun_func/Structured_light/move_line.sh"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE) #flsun add
+        elif sh == 3.0:
+            subprocess.Popen(["bash", "/home/pi/flsun_func/Structured_light/move_model.sh"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE) #flsun add
+        elif sh == 4.0:
+            subprocess.Popen(["bash", "/home/pi/flsun_func/Structured_light/move_cube.sh"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE) #flsun add
+        elif sh == 100.0:
+            subprocess.Popen(["bash", "/home/pi/flsun_func/Structured_light/structured_light_video_test.sh"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE) #flsun add
+    def cmd_M101(self, gcmd): #flsun add, 
+        flow = gcmd.get_float('F', None, above=0.)
+        size = gcmd.get_float('S', None, above=0.)
+        warp = gcmd.get_float('W', None, above=-1.0)
+        x_real_size = gcmd.get_float('X', None, above=0.)
+        y_real_size = gcmd.get_float('Y', None, above=0.)
+        target_size = gcmd.get_float('T', None, above=0.)
+        gcode = self.printer.lookup_object('gcode')
+        if flow is not None:
+            gcode.run_script_from_command('M117 flow = %f' % (flow))
+        if size is not None:
+            size = size + 0.1
+            gcode.run_script_from_command('M117 size = %f' % (size))
+            if size >= 19.3 and size <=20.7:
+                gcode_move = self.printer.lookup_object('gcode_move')#test
+                last_x_size_offset, last_y_size_offset = gcode_move.get_xy_size_offset()
+                configfile = self.printer.lookup_object('configfile')#test
+                new_y_size_offset = ((20-size)/20 + 1)*(1+last_y_size_offset) - 1
+                new_y_size_offset = min(new_y_size_offset, 0.034)
+                new_y_size_offset = max(new_y_size_offset, -0.034)
+                configfile.set('printer', 'y_size_offset', "%.6f" % (new_y_size_offset))
+                gcode.run_script_from_command('save_config')
+        if warp is not None:
+            if warp == 1.0:
+                gcode.run_script_from_command('M117 warp occur')
+            elif warp == 0.0:
+                gcode.run_script_from_command('M117 warp is normal')
+        if target_size is not None:
+            gcode_move = self.printer.lookup_object('gcode_move')#test
+            last_x_size_offset, last_y_size_offset = gcode_move.get_xy_size_offset()
+            configfile = self.printer.lookup_object('configfile')#test
+            if x_real_size is not None:
+                new_x_size_offset = ((target_size-x_real_size)/target_size + 1)*(1+last_x_size_offset) - 1
+                new_x_size_offset = min(new_x_size_offset, 0.034)
+                new_x_size_offset = max(new_x_size_offset, -0.034)
+                configfile.set('printer', 'x_size_offset', "%.6f" % (new_x_size_offset))
+            if y_real_size is not None:
+                new_y_size_offset = ((target_size-y_real_size)/target_size + 1)*(1+last_y_size_offset) - 1
+                new_y_size_offset = min(new_y_size_offset, 0.034)
+                new_y_size_offset = max(new_y_size_offset, -0.034)
+                configfile.set('printer', 'y_size_offset', "%.6f" % (new_y_size_offset))
+            gcode.run_script_from_command('save_config')
+
     # Print time and flush tracking
     def _advance_flush_time(self, flush_time):
         flush_time = max(flush_time, self.last_flush_time)
