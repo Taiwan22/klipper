@@ -46,6 +46,8 @@ class VirtualSD:
         self.gcode.register_command(
             "SDCARD_PRINT_FILE", self.cmd_SDCARD_PRINT_FILE,
             desc=self.cmd_SDCARD_PRINT_FILE_help)
+        self.gcode.register_command("POWER_LOSS_RESTART_PRINT", self.cmd_POWER_LOSS_RESTART_PRINT, #wzy add
+            desc=self.cmd_POWER_LOSS_RESTART_PRINT_help)
     def handle_shutdown(self):
         if self.work_timer is not None:
             self.must_pause_work = True
@@ -174,7 +176,16 @@ class VirtualSD:
         if filename.startswith('/'):
             filename = filename[1:]
         self._load_file(gcmd, filename)
-    def _load_file(self, gcmd, filename, check_subdirs=False):
+    cmd_POWER_LOSS_RESTART_PRINT_help = "Restart print after power loss and power on" #wzy add
+    def cmd_POWER_LOSS_RESTART_PRINT(self, gcmd): #wzy add
+        filename = gcmd.get("FILENAME")
+        fileposition = gcmd.get("FILEPOSITION")
+        fname = os.path.basename(filename)
+        print_duration = gcmd.get("PRINT_DURATION")
+        self.print_stats.modify_print_time(float(print_duration))
+        self._load_file(gcmd, fname, fileposition, check_subdirs=True)      
+        self.do_resume()
+    def _load_file(self, gcmd, filename, fileposition=0, check_subdirs=False):
         files = self.get_file_list(check_subdirs)
         flist = [f[0] for f in files]
         files_by_lower = { fname.lower(): fname for fname, fsize in files }
@@ -193,9 +204,16 @@ class VirtualSD:
         gcmd.respond_raw("File opened:%s Size:%d" % (filename, fsize))
         gcmd.respond_raw("File selected")
         self.current_file = f
-        self.file_position = 0
+        self.file_position = int(fileposition) #wzy modify
         self.file_size = fsize
         self.print_stats.set_current_file(filename)
+        #flsun add, run START_PRINT when start a print
+        if(fileposition == 0): #wzy modify
+            self.gcode.run_script_from_command("G28")
+        if(fileposition == 0): #wzy modify
+            self.gcode.run_script_from_command("START_PRINT")
+        else: #wzy modify
+            self.gcode.run_script_from_command("START_PRINT_RESUME")
     def cmd_M24(self, gcmd):
         # Start/resume SD print
         self.do_resume()
@@ -302,6 +320,9 @@ class VirtualSD:
             self.print_stats.note_pause()
         else:
             self.print_stats.note_complete()
+            #flsun add, run END_PRINT when end a print
+            self.gcode.run_script_from_command("END_PRINT")
+
         return self.reactor.NEVER
 
 def load_config(config):
