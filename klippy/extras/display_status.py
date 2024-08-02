@@ -42,6 +42,8 @@ class DisplayStatus:
     def cmd_M117(self, gcmd):
         msg = gcmd.get_raw_command_parameters() or None
         self.message = msg
+        if self.message is not None:
+            gcmd.respond_info(self.message) #flsun add, add this line to show message on web
     cmd_SET_DISPLAY_TEXT_help = "Set or clear the display message"
     def cmd_SET_DISPLAY_TEXT(self, gcmd):
         self.message = gcmd.get("MSG", None)
