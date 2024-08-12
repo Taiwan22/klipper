@@ -210,7 +210,6 @@ class VirtualSD:
         #flsun add, run START_PRINT when start a print
         if(fileposition == 0): #wzy modify
             self.gcode.run_script_from_command("G28")
-        if(fileposition == 0): #wzy modify
             self.gcode.run_script_from_command("START_PRINT")
         else: #wzy modify
             self.gcode.run_script_from_command("START_PRINT_RESUME")
