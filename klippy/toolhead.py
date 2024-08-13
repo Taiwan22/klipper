@@ -277,7 +277,6 @@ class ToolHead:
             raise config.error(msg)
         # Register commands
         gcode.register_command('G4', self.cmd_G4)
-        gcode.register_command('M108', self.cmd_M108) #flsun add,excute while power loss
         gcode.register_command('M100', self.cmd_M100) #flsun add,excute shell command
         gcode.register_command('M101', self.cmd_M101) #flsun add,excute flow,size,warp
         gcode.register_command('M400', self.cmd_M400)
@@ -293,8 +292,6 @@ class ToolHead:
                    "manual_probe", "tuning_tower"]
         for module_name in modules:
             self.printer.load_object(config, module_name)
-    def cmd_M108(self, gcmd): #flsun add, shutdown
-        self.printer.my_shutdown("my shutdwon")
     def cmd_M100(self, gcmd): #flsun add, shell command
         sh = gcmd.get_float('S', None, above=0.)
         if sh == 1.0:

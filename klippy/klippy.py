@@ -234,8 +234,6 @@ class Printer:
         with open("/home/pi/klipper_logs/mylog.txt", 'a') as file_ob:
             file_ob.write("Time: " + time_str + "  Code:" + my_key + "  Info: " + msg + "  Operate: " + "Reboot" + "   \n")
         gcode.run_script('M117 error_info:%s  %s' % (my_key,msg))
-    def my_shutdown(self, msg): #flsun add,shutdown ,and set my_shutdown_state to True
-        self.invoke_shutdown("power loss")
     def invoke_async_shutdown(self, msg, details):
         self.reactor.register_async_callback(
             (lambda e: self.invoke_shutdown(msg, details)))
