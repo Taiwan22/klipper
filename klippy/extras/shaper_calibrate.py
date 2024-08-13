@@ -294,6 +294,7 @@ class ShaperCalibrate:
             # End FLSUN Changes
                 # The current frequency is better for the shaper.
                 best_res = results[-1]
+        return best_res
         # Try to find an 'optimal' shapper configuration: the one that is not
         # much worse than the 'best' one, but gives much less smoothing
         # Start FLSUN Changes
