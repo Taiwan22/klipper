@@ -277,7 +277,6 @@ class ToolHead:
             raise config.error(msg)
         # Register commands
         gcode.register_command('G4', self.cmd_G4)
-        gcode.register_command('M108', self.cmd_M108) # FLSUN Changes
         gcode.register_command('M400', self.cmd_M400)
         gcode.register_command('SET_VELOCITY_LIMIT',
                                self.cmd_SET_VELOCITY_LIMIT,
@@ -290,10 +289,6 @@ class ToolHead:
                    "manual_probe", "tuning_tower"]
         for module_name in modules:
             self.printer.load_object(config, module_name)
-    # Start FLSUN Changes
-    def cmd_M108(self, gcmd):
-        self.printer.my_shutdown("my shutdown")
-    # End FLSUN Changes
     # Print time and flush tracking
     def _advance_flush_time(self, flush_time):
         flush_time = max(flush_time, self.last_flush_time)
