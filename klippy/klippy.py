@@ -149,9 +149,7 @@ class Printer:
             logging.exception(msg)
             self._set_state(msg)
             self.send_event("klippy:notify_mcu_error", msg, {"error": str(e)})
-            util.dump_mcu_build()
-            gcode =  self.lookup_object('gcode') #flsun add
-            gcode.request_restart('firmware_restart') #flsun add         
+            util.dump_mcu_build()    
             return
         except Exception as e:
             logging.exception("Unhandled exception during connect")
