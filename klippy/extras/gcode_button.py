@@ -42,23 +42,23 @@ class GCodeButton:
             self.release_time = float(eventtime)
             self.triggered_time = self.release_time - self.pressed_time
             if 'motor_a' in self.name:
-                if self.triggered_time < 0.25: # 200ms
-                    self.gcode.run_script_from_command("M117 please calibrate motor A!")
+                if self.triggered_time < 0.25:
+                    self.gcode.run_script_from_command("M117 Please calibrate Motor A!")
                 elif self.triggered_time > 0.25 and self.triggered_time < 0.8: #500ms
-                    self.printer.invoke_shutdown("motor A occur error")
-                    self.gcode.run_script("M117 motor A occor error!") 
+                    self.printer.invoke_shutdown("Error has occurred with Motor A")
+                    self.gcode.run_script("M117 Error has occurred with Motor A!") 
             if 'motor_b' in self.name:
                 if self.triggered_time < 0.25:
-                    self.gcode.run_script_from_command("M117 please calibrate motor B!")
+                    self.gcode.run_script_from_command("M117 Please calibrate Motor B!")
                 elif self.triggered_time > 0.25 and self.triggered_time < 0.8:
-                    self.printer.invoke_shutdown("motor B occur error")
-                    self.gcode.run_script("M117 motor B occor error!")
+                    self.printer.invoke_shutdown("Error has occurred with Motor B")
+                    self.gcode.run_script("M117 Error has occurred with Motor B!")
             if 'motor_c' in self.name:
                 if self.triggered_time < 0.25:
-                    self.gcode.run_script_from_command("M117 please calibrate motor C!")
+                    self.gcode.run_script_from_command("M117 Please calibrate Motor C!")
                 elif self.triggered_time > 0.25 and self.triggered_time < 0.8:
-                    self.printer.invoke_shutdown("motor C occur error")
-                    self.gcode.run_script("M117 motor C occor error!")
+                    self.printer.invoke_shutdown("Error has occurred with Motor C")
+                    self.gcode.run_script("M117 Error has occurred with Motor C!")
             template = self.release_template
         else:
             self.pressed_time = float(eventtime)
