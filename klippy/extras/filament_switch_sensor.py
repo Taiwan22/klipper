@@ -4,9 +4,8 @@
 #
 # This file may be distributed under the terms of the GNU GPLv3 license.
 import logging
-#import chelper #wzy add
-import mcu  #wzy add
-from . import homing #wzy add
+import mcu # FLSUN Changes
+from . import homing # FLSUN Changes
 
 class RunoutHelper:
     def __init__(self, config):
@@ -14,13 +13,14 @@ class RunoutHelper:
         self.printer = config.get_printer()
         self.reactor = self.printer.get_reactor()
         self.gcode = self.printer.lookup_object('gcode')
+        # Start FLSUN Changes
         if self.name == "power_loss":
-            self.mcu = self.printer.lookup_object('mcu') #wzy add
+            self.mcu = self.printer.lookup_object('mcu')
             self._dispatch = mcu.TriggerDispatch(self.mcu)
-            self.gcode.register_command(    #wzy add
-            'STEPPER_STOP',self.cmd_STEPPER_STOP,
-            desc=self.cmd_STEPPER_STOP_help)
-
+            self.gcode.register_command(
+                'STEPPER_STOP',self.cmd_STEPPER_STOP,
+                desc=self.cmd_STEPPER_STOP_help)
+        # End FLSUN Changes
         # Read config
         self.runout_pause = config.getboolean('pause_on_runout', True)
         if self.runout_pause:
@@ -41,8 +41,10 @@ class RunoutHelper:
         self.sensor_enabled = True
         # Register commands and event handlers
         self.printer.register_event_handler("klippy:ready", self._handle_ready)
+        # Start FLSUN Changes
         self.printer.register_event_handler('klippy:mcu_identify',
-                                            self._handle_mcu_identify) #wzy add
+            self._handle_mcu_identify)
+        # End FLSUN Changes
         self.gcode.register_mux_command(
             "QUERY_FILAMENT_SENSOR", "SENSOR", self.name,
             self.cmd_QUERY_FILAMENT_SENSOR,
@@ -53,14 +55,16 @@ class RunoutHelper:
             desc=self.cmd_SET_FILAMENT_SENSOR_help)
     def _handle_ready(self):
         self.min_event_systime = self.reactor.monotonic() + 2.
-    def _handle_mcu_identify(self): #wzy add
+    # Start FLSUN Changes
+    def _handle_mcu_identify(self):
         if self.name == "power_loss":
-            kin = self.printer.lookup_object('toolhead').get_kinematics() #wzy add
-            for stepper in kin.get_steppers(): #wzy add
+            kin = self.printer.lookup_object('toolhead').get_kinematics()
+            for stepper in kin.get_steppers():
                  self._dispatch.add_stepper(stepper)
             extruder = self.printer.lookup_object('toolhead').get_extruder()
             stepper_ext = extruder.extruder_stepper.stepper
-            self._dispatch.add_stepper(stepper_ext)         
+            self._dispatch.add_stepper(stepper_ext) 
+    # End FLSUN Changes
     def _runout_event_handler(self, eventtime):
         # Pausing from inside an event requires that the pause portion
         # of pause_resume execute immediately.
@@ -122,8 +126,9 @@ class RunoutHelper:
     cmd_SET_FILAMENT_SENSOR_help = "Sets the filament sensor on/off"
     def cmd_SET_FILAMENT_SENSOR(self, gcmd):
         self.sensor_enabled = gcmd.get_int("ENABLE", 1)
-    cmd_STEPPER_STOP_help = "Stop the stepper by send commands to the mcu" #wzy add
-    def cmd_STEPPER_STOP(self,gcmd): #wzy add
+    # Start FLSUN Changes
+    cmd_STEPPER_STOP_help = "Stop the stepper by send commands to the mcu"
+    def cmd_STEPPER_STOP(self,gcmd):
         toolhead = self.printer.lookup_object('toolhead')
         toolhead.lookahead.reset()
         fan_state = self.printer.lookup_object('fan')
@@ -144,6 +149,7 @@ class RunoutHelper:
                     "Homing failed due to printer shutdown")
             self.printer.lookup_object('stepper_enable').motor_off()
             raise
+    # End FLSUN Changes
 
 class SwitchSensor:
     def __init__(self, config):

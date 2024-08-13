@@ -149,7 +149,7 @@ class Printer:
             logging.exception(msg)
             self._set_state(msg)
             self.send_event("klippy:notify_mcu_error", msg, {"error": str(e)})
-            util.dump_mcu_build()    
+            util.dump_mcu_build()
             return
         except Exception as e:
             logging.exception("Unhandled exception during connect")
@@ -214,8 +214,10 @@ class Printer:
         logging.info("Reactor garbage collection: %s",
                      self.reactor.get_gc_stats())
         self.send_event("klippy:notify_mcu_shutdown", msg, details)
-    def my_shutdown(self, msg): #flsun add,shutdown ,and set my_shutdown_state to True
+    # Start FLSUN Changes
+    def my_shutdown(self, msg):
         self.invoke_shutdown("power loss")
+    # End FLSUN Changes
     def invoke_async_shutdown(self, msg, details):
         self.reactor.register_async_callback(
             (lambda e: self.invoke_shutdown(msg, details)))

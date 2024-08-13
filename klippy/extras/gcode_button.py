@@ -9,9 +9,11 @@ class GCodeButton:
     def __init__(self, config):
         self.printer = config.get_printer()
         self.name = config.get_name().split(' ')[-1]
-        self.pressed_time = 0 #flsun add
-        self.release_time = 0 #flsun add
-        self.triggered_time = 0 #flsun add
+        # Start FLSUN Changes
+        self.pressed_time = 0
+        self.release_time = 0
+        self.triggered_time = 0
+        # End FLSUN Changes
         self.pin = config.get('pin')
         self.last_state = 0
         buttons = self.printer.load_object(config, "buttons")
@@ -39,12 +41,13 @@ class GCodeButton:
         self.last_state = state
         template = self.press_template
         if not state:
+            # Start FLSUN Changes
             self.release_time = float(eventtime)
             self.triggered_time = self.release_time - self.pressed_time
             if 'motor_a' in self.name:
                 if self.triggered_time < 0.25:
                     self.gcode.run_script_from_command("M117 Please calibrate Motor A!")
-                elif self.triggered_time > 0.25 and self.triggered_time < 0.8: #500ms
+                elif self.triggered_time > 0.25 and self.triggered_time < 0.8:
                     self.printer.invoke_shutdown("Error has occurred with Motor A")
                     self.gcode.run_script("M117 Error has occurred with Motor A!") 
             if 'motor_b' in self.name:
@@ -59,9 +62,12 @@ class GCodeButton:
                 elif self.triggered_time > 0.25 and self.triggered_time < 0.8:
                     self.printer.invoke_shutdown("Error has occurred with Motor C")
                     self.gcode.run_script("M117 Error has occurred with Motor C!")
+            # End FLSUN Changes
             template = self.release_template
+        # Start FLSUN Changes
         else:
             self.pressed_time = float(eventtime)
+        # End FLSUN Changes
         try:
             self.gcode.run_script(template.render())
         except:

@@ -4,13 +4,15 @@
 #
 # This file may be distributed under the terms of the GNU GPLv3 license.
 import collections, math
-import numpy as np #flsun add
+import numpy as np # FLSUN Changes
+
 SHAPER_VIBRATION_REDUCTION=20.
 DEFAULT_DAMPING_RATIO = 0.1
 
 InputShaperCfg = collections.namedtuple(
         'InputShaperCfg', ('name', 'init_func', 'min_freq'))
-#flsun add
+
+# Start FLSUN Changes
 def step(shaper_freq, damping_ratio,t):
     wn = 2. * math.pi * shaper_freq
     df = math.sqrt(1. - damping_ratio**2)
@@ -21,7 +23,7 @@ def step(shaper_freq, damping_ratio,t):
     cos1 = math.cos(wd * t + Beta)
     s = t + (wd * e * cos1 + damping_ratio * wn * e * sin1)/((damping_ratio **2 * wn **2 + wd **2)*df)
     return s
-#flsun add
+
 def generate_matrix_C_zv(shaper_freq, damping_ratio,n,Tc):
     wn = 2. * math.pi * shaper_freq
     df = math.sqrt(1. - damping_ratio**2)
@@ -33,7 +35,7 @@ def generate_matrix_C_zv(shaper_freq, damping_ratio,n,Tc):
         matrix_C[2][i-1] = 1
         matrix_C[3][i-1] = i-1
     return matrix_C
-#flsun add
+
 def generate_matrix_C_zvd(shaper_freq, damping_ratio,n,Tc):
     wn = 2. * math.pi * shaper_freq
     df = math.sqrt(1. - damping_ratio**2)
@@ -47,23 +49,23 @@ def generate_matrix_C_zvd(shaper_freq, damping_ratio,n,Tc):
         matrix_C[4][i-1] = (i-1) * np.exp(wn * damping_ratio * (i-1) * Tc) * np.sin(wd * (i-1) * Tc)
         matrix_C[5][i-1] = i-1
     return matrix_C
-#flsun add
+
 def generate_vector_b_zv(shaper_freq, damping_ratio,m,Tc):
     wn = 2. * math.pi * shaper_freq
     vector_b = np.array([0,0,1,m - 2 * damping_ratio / (wn * Tc)]).reshape(4, 1)
     return vector_b
-#flsun add
+
 def generate_vector_b_zvd(shaper_freq, damping_ratio,m,Tc):
     wn = 2. * math.pi * shaper_freq
     vector_b = np.array([0,0,1,0,0,m - 2 * damping_ratio / (wn * Tc)]).reshape(6, 1)
     return vector_b
-#flsun add
+
 def generate_matrix_Q(n,qi):
     matrix_Q = np.zeros((n,n))
     for i in range(n) :
         matrix_Q[i][i] = qi
     return matrix_Q
-#flsun add
+
 def generate_matrix_Psi(shaper_freq, damping_ratio,n,Tc):
     wn = 2. * math.pi * shaper_freq
     df = math.sqrt(1. - damping_ratio**2)
@@ -84,7 +86,7 @@ def generate_matrix_Psi(shaper_freq, damping_ratio,n,Tc):
             ft = (1 - e1*sin1/df)*(1-e2*sin2/df)
             matrix_Psi[i-1][j-1] = np.trapz(ft, t)
     return matrix_Psi
-#flsun add
+
 def generate_matrix_H(shaper_freq, damping_ratio,n,Tc):
     wn = 2. * math.pi * shaper_freq
     df = math.sqrt(1. - damping_ratio**2)
@@ -105,20 +107,21 @@ def generate_matrix_H(shaper_freq, damping_ratio,n,Tc):
             ft = (1 - e1*sin1/df)*(1-e2*sin2/df)
             matrix_H[i-1][j-1] = np.trapz(ft, t)
     return matrix_H
-#flsun add
+
 def generate_vector_theta(shaper_freq, damping_ratio,n,Tc,m):
     vector_theta = np.zeros((n,1))
     for i in range(1,n+1):
         t_min = max(m-i-1, 0) * Tc
         vector_theta[i-1][0] = step(shaper_freq, damping_ratio,(n-i-2)*Tc) - step(shaper_freq, damping_ratio,t_min)
     return vector_theta
-#flsun add
+
 def generate_vector_g(shaper_freq, damping_ratio,n,Tc):
     vector_g = np.zeros((n,1))
     for i in range(1,n+1):
         t_min = max(n-i-2, 0) * Tc
         vector_g[i-1][0] = step(shaper_freq, damping_ratio,(2*n-i-1)*Tc) - step(shaper_freq, damping_ratio,t_min)
     return vector_g
+# End FLSUN Changes
 
 def get_none_shaper():
     return ([], [])
@@ -199,7 +202,8 @@ def get_3hump_ei_shaper(shaper_freq, damping_ratio):
     A = [a1, a2, a3, a4, a5]
     T = [0., .5*t_d, t_d, 1.5*t_d, 2.*t_d]
     return (A, T)
-#flsun add
+
+# Start FLSUN Changes
 def get_zv_zvd_shaper(shaper_freq, damping_ratio):
     df = math.sqrt(1. - damping_ratio**2)
     K = math.exp(-damping_ratio * math.pi / df)
@@ -207,7 +211,7 @@ def get_zv_zvd_shaper(shaper_freq, damping_ratio):
     A = [1., 3.*K, 3*K**2, K**3]
     T = [0., .5*t_d, t_d, 1.5*t_d]
     return (A, T)
-#flsun add
+
 def get_zero_zv_shaper(shaper_freq, damping_ratio):
     Tc = 0.001
     m = 15
@@ -242,6 +246,7 @@ def get_zero_zv_shaper(shaper_freq, damping_ratio):
     A = A.flatten().tolist()
     T = T.flatten().tolist()
     return (A, T)
+# End FLSUN Changes
 
 # min_freq for each shaper is chosen to have projected max_accel ~= 1500
 INPUT_SHAPERS = [
@@ -251,7 +256,8 @@ INPUT_SHAPERS = [
     InputShaperCfg('ei', get_ei_shaper, min_freq=29.),
     InputShaperCfg('2hump_ei', get_2hump_ei_shaper, min_freq=39.),
     InputShaperCfg('3hump_ei', get_3hump_ei_shaper, min_freq=48.),
-    InputShaperCfg('zv_zvd', get_zv_zvd_shaper, min_freq=21.), #flsun add
-    InputShaperCfg('zero_zv', get_zero_zv_shaper, min_freq=21.), #flsun add
-    #InputShaperCfg('zero_zvd', get_zero_zvd_shaper, min_freq=21.), #flsun add
+    # Start FLSUN Changes
+    InputShaperCfg('zv_zvd', get_zv_zvd_shaper, min_freq=21.),
+    InputShaperCfg('zero_zv', get_zero_zv_shaper, min_freq=21.),
+    # End FLSUN Changes
 ]

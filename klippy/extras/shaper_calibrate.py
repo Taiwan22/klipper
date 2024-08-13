@@ -252,12 +252,14 @@ class ShaperCalibrate:
         psd = calibration_data.psd_sum[freq_bins <= max_freq]
         freq_bins = freq_bins[freq_bins <= max_freq]
 
+        # Start FLSUN Changes
         max_psd = max(psd)
         num_freqs = freq_bins.shape[0]
         for i in range(num_freqs):
             if psd[i] == max_psd:
                 frequency = freq_bins[i]
                 break
+        # End FLSUN Changes
         best_res = None
         results = []
         for test_freq in test_freqs[::-1]:
@@ -286,11 +288,21 @@ class ShaperCalibrate:
                         name=shaper_cfg.name, freq=test_freq, vals=shaper_vals,
                         vibrs=shaper_vibrations, smoothing=shaper_smoothing,
                         score=shaper_score, max_accel=max_accel))
-            if best_res is None or  (abs(best_res.freq - frequency) > abs(results[-1].freq -frequency)): #flsun modify
+            # Start FLSUN Changes
+            #if best_res is None or best_res.vibrs > results[-1].vibrs:
+            if best_res is None or  (abs(best_res.freq - frequency) > abs(results[-1].freq -frequency)):
+            # End FLSUN Changes
                 # The current frequency is better for the shaper.
                 best_res = results[-1]
-        return best_res
-        #flsun delete
+        # Try to find an 'optimal' shapper configuration: the one that is not
+        # much worse than the 'best' one, but gives much less smoothing
+        # Start FLSUN Changes
+        #selected = best_res
+        #for res in results[::-1]:
+        #    if res.vibrs < best_res.vibrs * 1.1 and res.score < selected.score:
+        #        selected = res
+        #return selected
+        # End FLSUN Changes
 
     def _bisect(self, func):
         left = right = 1.
@@ -349,7 +361,7 @@ class ShaperCalibrate:
         return best_shaper, all_shapers
 
     def save_params(self, configfile, axis, shaper_name, shaper_freq):
-        shaper_name = 'zero_zv' #flsun add
+        shaper_name = 'zero_zv' # FLSUN Changes
         if axis == 'xy':
             self.save_params(configfile, 'x', shaper_name, shaper_freq)
             self.save_params(configfile, 'y', shaper_name, shaper_freq)
@@ -359,7 +371,7 @@ class ShaperCalibrate:
                            '%.1f' % (shaper_freq,))
 
     def apply_params(self, input_shaper, axis, shaper_name, shaper_freq):
-        shaper_name = 'zero_zv' #flsun add
+        shaper_name = 'zero_zv' # FLSUN Changes
         if axis == 'xy':
             self.apply_params(input_shaper, 'x', shaper_name, shaper_freq)
             self.apply_params(input_shaper, 'y', shaper_name, shaper_freq)
